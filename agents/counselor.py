@@ -1060,7 +1060,7 @@ Please limit the word count to no more than 50 words!!!
             strategies[len(strategies)] = strategy
         temp_prompt = (
             prompt
-            + "The professional counselor suggests using the following startegies:\n"
+            + "The professional counselor suggests using the following strategies:\n"
         )
         for strategy in selected_strategies:
             temp_prompt += f"- **{strategy}**: {self.strategy2description[strategy]}\n"
@@ -1077,7 +1077,7 @@ Please limit the word count to no more than 50 words!!!
             response = response.split("Client: ")[0]
         candidate_responses[len(candidate_responses)] = response
         strategies[len(strategies)] = "Combined Strategies"
-        respnose_select_prompt = f"""You will act as a skilled counselor conducting a Motivational Interviewing (MI) session aimed at achieving {self.goal} related to the client's behavior, {self.behavior}. Your task is to help the client discover their inherent motivation to change and identify a tangible plan to change. The current state of the counseling session is as follows:
+        response_select_prompt = f"""You will act as a skilled counselor conducting a Motivational Interviewing (MI) session aimed at achieving {self.goal} related to the client's behavior, {self.behavior}. Your task is to help the client discover their inherent motivation to change and identify a tangible plan to change. The current state of the counseling session is as follows:
 
 [@conversation]
 
@@ -1087,17 +1087,17 @@ At this point, multiple responses have been generated based on the client’s cu
 
 Please choose the most suitable response based on the counseling context and the client's motivational state. Reply with the ID of the response you find most appropriate for the current situation.
 """
-        respnose_select_prompt = respnose_select_prompt.replace(
+        response_select_prompt = response_select_prompt.replace(
             "[@conversation]", "- " + "\n- ".join(self.conversation)
         )
-        respnose_select_prompt = respnose_select_prompt.replace(
+        response_select_prompt = response_select_prompt.replace(
             "[@responses]",
             "\n".join(
                 [f"{i+1}. {response}" for i, response in candidate_responses.items()]
             ),
         )
         response = get_precise_response(
-            messages=[{"role": "user", "content": respnose_select_prompt}],
+            messages=[{"role": "user", "content": response_select_prompt}],
             max_tokens=150,
             model=self.model,
         )

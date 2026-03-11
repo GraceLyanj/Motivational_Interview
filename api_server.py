@@ -178,15 +178,15 @@ def cami_stream_generator(
     text = line.strip()
     role: Literal["client", "counselor"]
 
-、    thinking = None
+    thinking = None
     first_bracket = text.find("[")
     last_bracket = text.rfind("]")
     if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
       thinking_block = text[first_bracket : last_bracket + 1]
       thinking = thinking_block.strip()
-、      text = (text[:first_bracket] + text[last_bracket + 1 :]).strip()
+      text = (text[:first_bracket] + text[last_bracket + 1 :]).strip()
 
-、    idx_client = text.find("Client:")
+    idx_client = text.find("Client:")
     idx_counselor = text.find("Counselor:")
 
     if idx_client == -1 and idx_counselor == -1:
