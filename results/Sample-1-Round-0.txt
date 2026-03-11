@@ -1,0 +1,2 @@
+Counselor: Hello. How are you?
+Client: I am good. What about you?
