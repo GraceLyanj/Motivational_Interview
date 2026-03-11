@@ -912,6 +912,8 @@ Is there a question in the last utterance of Counselor? Yes or No"""
                 if action == "Hesitate":
                     personas.pop(personas.index(persona))
                 return persona
+        if not personas:
+            return None
         persona = random.choice(personas)
         if action == "Hesitate":
             personas.pop(personas.index(persona))

@@ -174,3 +174,8 @@ cython_debug/
 /AnnoMI/
 /dumps/
 /output/
+
+# Local helper scripts (not for version control)
+run_generate_local.sh
+start_backend.sh
+start_frontend.sh

@@ -1,0 +1,10 @@
+portkey-ai
+openai
+transformers
+torch
+datasets
+accelerate
+backoff
+FlagEmbedding
+fastapi
+uvicorn[standard]

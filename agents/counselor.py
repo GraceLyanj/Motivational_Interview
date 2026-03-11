@@ -400,7 +400,13 @@ Given Current Context:
 Client’s State:
 [@state]
 
-Please analyse the current situation, then select appropriate strategies based on current topic and situation to motivate client after analysing. Remember, you can select up to 2 strategies.
+You must reply in exactly this structure so it can be parsed (nesting: Analysis is one bullet, Selected strategies is another bullet with sub-bullets):
+
+**Analysis (brief):** [One short paragraph: analyze the exchange and why the client's state suggests avoiding directing/warning/confronting, and what the best next move is—e.g. build rapport, invite the client's agenda.]
+
+**Selected strategies for the next response (max 2):** [Strategy1 – Short reason for this strategy., Strategy2 – Short reason for this strategy.]
+
+Use only strategy names from the list above (e.g. Open Question, Facilitate, Structure, Affirm, Complex Reflection). Do not wrap strategy names in quotes. The Selected strategies line must be exactly: the heading, then a single square-bracket list of two items separated by ", " (comma space), each item "StrategyName – reason." Example: **Selected strategies for the next response (max 2):** [Open Question – To invite the client to set the agenda and begin exploring their perspective without pressure., Facilitate – To encourage the client to continue talking and deepen engagement early in the session.]
 """
         prompt = prompt.replace("[@context]", "\n".join(self.conversation))
         prompt = prompt.replace("[@state]", f"{state}: {self.state2instruction[state]}")
