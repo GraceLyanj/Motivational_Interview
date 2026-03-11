@@ -172,8 +172,6 @@ def cami_stream_generator(
   def split_thinking_and_utterance(line: str):
     """Split a raw CAMI line into (thinking, role, utterance).
 
-    - Everything between the first `[` 和最后一个 `]` 视为 thinking（支持内部再出现 `[`）。
-    - 剩余文本再按 `Client:` / `Counselor:` 拆出真正说话内容。
     """
     text = line.strip()
     role: Literal["client", "counselor"]
