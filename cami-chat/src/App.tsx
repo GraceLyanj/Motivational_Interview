@@ -10,10 +10,15 @@ interface Message {
   text: string;
 }
 
+const API_BASE = "http://localhost:8000";
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nextId, setNextId] = useState(1);
 
   const renderWithBold = (text: string) => {
     const parts = text.split("**");
@@ -170,40 +175,76 @@ function App() {
     });
   };
 
-  const runSimulation = () => {
-    if (isRunning) return;
-    setIsRunning(true);
+  const startSession = async () => {
     setError(null);
     setMessages([]);
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/manual_session_start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { session_id: string; initial_message: { role: Role; text: string } };
+      setSessionId(data.session_id);
+      setNextId(2);
+      setMessages([
+        { id: 1, kind: "message", role: "counselor", text: data.initial_message.text },
+      ]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to start session.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    const source = new EventSource("http://localhost:8000/auto_session_stream");
-
-    source.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as {
-          kind: Kind;
-          role: Role;
-          text: string;
-        };
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: prev.length + 1,
-            kind: data.kind,
-            role: data.role,
-            text: data.text,
-          },
-        ]);
-      } catch (e) {
-        console.error("Failed to parse event data", e);
-      }
-    };
-
-    source.onerror = () => {
-      source.close();
-      setIsRunning(false);
-      setError("Stream ended or failed. Check backend logs and try again.");
-    };
+  const sendClientMessage = async () => {
+    const text = inputValue.trim();
+    if (!text || !sessionId || isLoading) return;
+    setInputValue("");
+    const id = nextId;
+    setNextId((n) => n + 1);
+    setMessages((prev) => [...prev, { id, kind: "message", role: "client", text }]);
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/manual_session_message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, client_message: text }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as {
+        thinking?: string | null;
+        message: { role: Role; text: string };
+      };
+      setMessages((prev) => {
+        const newMessages: Message[] = [];
+        let id = prev.length + 1;
+        if (data.thinking) {
+          newMessages.push({
+            id,
+            kind: "thinking",
+            role: "counselor",
+            text: data.thinking,
+          });
+          id += 1;
+        }
+        newMessages.push({
+          id,
+          kind: "message",
+          role: data.message.role,
+          text: data.message.text,
+        });
+        return [...prev, ...newMessages];
+      });
+      setNextId((n) => n + (data.thinking ? 2 : 1));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to get counselor reply.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -211,24 +252,27 @@ function App() {
       <div className="w-full max-w-3xl bg-white shadow-lg rounded-xl flex flex-col h-[80vh]">
         <header className="px-4 py-3 border-b flex items-center justify-between">
           <h1 className="text-lg font-semibold">
-            CAMI – AI Client &amp; Counselor
+            CAMI – You as Client, AI Counselor
           </h1>
-          <button
-            className="px-3 py-1 rounded-full border border-blue-600 text-blue-600 text-sm hover:bg-blue-50 disabled:opacity-60"
-            type="button"
-            onClick={runSimulation}
-            disabled={isRunning}
-          >
-            {isRunning ? "Running…" : "Run CAMI Session"}
-          </button>
+          {!sessionId ? (
+            <button
+              className="px-3 py-1 rounded-full border border-blue-600 text-blue-600 text-sm hover:bg-blue-50 disabled:opacity-60"
+              type="button"
+              onClick={startSession}
+              disabled={isLoading}
+            >
+              {isLoading ? "Starting…" : "Start session"}
+            </button>
+          ) : (
+            <span className="text-xs text-slate-500">Session active</span>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          {messages.length === 0 && !isRunning && (
+          {messages.length === 0 && !sessionId && (
             <p className="text-sm text-slate-500">
-              Click &quot;Run CAMI Session&quot; to simulate a full dialogue
-              where both the client and counselor are AI. Messages will appear
-              live as they are generated.
+              Click &quot;Start session&quot; to begin. You type as the client;
+              the AI counselor will respond.
             </p>
           )}
 
@@ -275,13 +319,35 @@ function App() {
           )}
         </main>
 
+        {sessionId && (
+          <div className="border-t px-4 py-3 flex gap-2">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendClientMessage()}
+              placeholder="Type your message as the client…"
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading}
+            />
+            <button
+              type="button"
+              onClick={sendClientMessage}
+              disabled={isLoading || !inputValue.trim()}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? "…" : "Send"}
+            </button>
+          </div>
+        )}
+
         <footer className="border-t px-4 py-3 text-[11px] text-slate-500">
           {error ? (
             <p className="text-red-500">{error}</p>
           ) : (
             <p>
-              Both sides are AI; this view shows the client–counselor
-              conversation as it is generated in real time.
+              You play the client; the counselor is AI. Start a session and type
+              your messages below.
             </p>
           )}
         </footer>

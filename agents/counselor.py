@@ -65,7 +65,7 @@ def get_json_response(
 
 
 class CAMI:
-    def __init__(self, goal, behavior, model):
+    def __init__(self, goal, behavior, model, **kwargs):
         self.state2instruction = {
             "Precontemplation": "The Client does not recognize their behavior as problematic and is not considering change.",
             "Contemplation": "The Client acknowledges the problematic nature of their behavior but is ambivalent about change.",
@@ -172,11 +172,19 @@ At the core of MI are a few basic principles, including expressing empathy and d
         }
         first_counselor = """Counselor: Hello. How are you?"""
         first_client = """Client: I am good. What about you?"""
-        self.messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "assistant", "content": first_counselor},
-            {"role": "user", "content": first_client},
-        ]
+        # When manual_client=True, the human types client messages; do not add default first_client.
+        manual_client = kwargs.get("manual_client", False)
+        if manual_client:
+            self.messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "assistant", "content": first_counselor},
+            ]
+        else:
+            self.messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "assistant", "content": first_counselor},
+                {"role": "user", "content": first_client},
+            ]
         self.model = model
         self.goal = goal
         self.behavior = behavior
@@ -278,7 +286,7 @@ At the core of MI are a few basic principles, including expressing empathy and d
             "Scholarship": {"Parent": ["Student Affairs"], "Children": []}
         }
         self.explored_topics = []
-        self.conversation = [first_counselor, first_client]
+        self.conversation = [first_counselor] if manual_client else [first_counselor, first_client]
         self.topic_stack = []
         self.initialized = False
 

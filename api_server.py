@@ -1,15 +1,19 @@
 from typing import List, Literal, TypedDict, Optional
+import uuid
 
 import json
 import os
 import random
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from agents import Env, CAMI, Client
 from agents.env import heuristic_moderator
+
+# In-memory store for manual (human-as-client) sessions: session_id -> CAMI counselor
+manual_sessions: dict[str, CAMI] = {}
 
 
 class IncomingMessage(TypedDict):
@@ -290,6 +294,107 @@ def auto_session(request: AutoSessionRequest | None = None) -> AutoSessionRespon
   )
 
   return {"conversation": conversation}
+
+
+def _split_thinking_and_utterance(line: str):
+  """Split a raw CAMI line into (thinking, role, utterance)."""
+  text = line.strip()
+  role: Literal["client", "counselor"]
+  thinking = None
+  first_bracket = text.find("[")
+  last_bracket = text.rfind("]")
+  if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+    thinking_block = text[first_bracket : last_bracket + 1]
+    thinking = thinking_block.strip()
+    text = (text[:first_bracket] + text[last_bracket + 1 :]).strip()
+  idx_client = text.find("Client:")
+  idx_counselor = text.find("Counselor:")
+  if idx_client == -1 and idx_counselor == -1:
+    return thinking, "counselor", text
+  if idx_client != -1 and (idx_counselor == -1 or idx_client < idx_counselor):
+    role = "client"
+    prefix = "Client:"
+    start_idx = idx_client
+  else:
+    role = "counselor"
+    prefix = "Counselor:"
+    start_idx = idx_counselor
+  pre_speaker = text[:start_idx].strip()
+  if pre_speaker:
+    thinking = f"{pre_speaker} {thinking}" if thinking else pre_speaker
+  utterance = text[start_idx + len(prefix) :].strip()
+  return thinking, role, utterance
+
+
+def _create_counselor_for_manual(
+  profile_path: str = "./annotations/profiles.jsonl",
+  profile_index: Optional[int] = None,
+  model: str = "gpt-5.2",
+) -> CAMI:
+  """Create a CAMI counselor for manual client input (no AI client)."""
+  with open(profile_path, encoding="utf-8") as f:
+    lines = f.readlines()
+  if not lines:
+    raise RuntimeError("No profiles found in profiles.jsonl")
+  if profile_index is None:
+    profile_index = random.randrange(len(lines))
+  else:
+    profile_index = max(0, min(profile_index, len(lines) - 1))
+  sample = json.loads(lines[profile_index])
+  goal = sample["topic"]
+  behavior = sample["Behavior"]
+  return CAMI(goal=goal, behavior=behavior, model=model, manual_client=True)
+
+
+class ManualSessionStartResponse(TypedDict):
+  session_id: str
+  initial_message: IncomingMessage
+
+
+class ManualMessageRequest(TypedDict):
+  session_id: str
+  client_message: str
+
+
+class ManualMessageResponse(TypedDict):
+  thinking: Optional[str]
+  message: IncomingMessage
+
+
+@app.post("/manual_session_start", response_model=ManualSessionStartResponse)
+def manual_session_start(profile_index: Optional[int] = None) -> ManualSessionStartResponse:
+  """Start a new session where the user types client messages. Returns session_id and initial counselor greeting."""
+  counselor = _create_counselor_for_manual(
+    profile_path="./annotations/profiles.jsonl",
+    profile_index=profile_index,
+    model=os.environ.get("OPENAI_MODEL", "gpt-5.2"),
+  )
+  session_id = str(uuid.uuid4())
+  manual_sessions[session_id] = counselor
+  return {
+    "session_id": session_id,
+    "initial_message": {"role": "counselor", "text": "Hello. How are you?"},
+  }
+
+
+@app.post("/manual_session_message", response_model=ManualMessageResponse)
+def manual_session_message(request: ManualMessageRequest) -> ManualMessageResponse:
+  """Send a client message (user input) and get the counselor's reply."""
+  session_id = request.get("session_id") or ""
+  client_message = (request.get("client_message") or "").strip()
+  if not session_id or session_id not in manual_sessions:
+    raise HTTPException(status_code=400, detail="Invalid or expired session_id")
+  if not client_message:
+    raise HTTPException(status_code=400, detail="client_message is required")
+  counselor = manual_sessions[session_id]
+  client_line = f"Client: {client_message}"
+  counselor.receive(client_line)
+  raw_reply = counselor.reply().replace("\n", " ")
+  thinking, role, utterance = _split_thinking_and_utterance(raw_reply)
+  return {
+    "thinking": thinking,
+    "message": {"role": role, "text": utterance},
+  }
 
 
 @app.get("/auto_session_stream")
