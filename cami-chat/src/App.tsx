@@ -252,7 +252,7 @@ function App() {
       <div className="w-full max-w-3xl bg-white shadow-lg rounded-xl flex flex-col h-[80vh]">
         <header className="px-4 py-3 border-b flex items-center justify-between">
           <h1 className="text-lg font-semibold">
-            CAMI – You as Client, AI Counselor
+            CAMI AI Counselor
           </h1>
           {!sessionId ? (
             <button
