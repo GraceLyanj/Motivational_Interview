@@ -50,7 +50,7 @@ def _tree_for_prompt(topic_graph: dict) -> str:
 
 class CAMI:
     """
-    Minimal tree-guided counselor: the full topic graph is passed into each API call.
+    Tree-guided counselor: the full topic graph is passed into each API call.
     Topic stack is updated from a small JSON navigation step, then one MI utterance is generated.
     """
 
@@ -61,6 +61,67 @@ class CAMI:
         manual_client = kwargs.get("manual_client", False)
         self.topic_graph = topic_graph if topic_graph is not None else DEFAULT_TOPIC_GRAPH
         self._validate_graph()
+
+        # Topic descriptions (used to ground the focused topic each turn).
+        self.topic2description = {
+            # --- ROOT LEVEL ---
+            "Autonomy": (
+                f"You can explore how {behavior} currently feels forced or dictated by others[cite: 78, 79]. "
+                f"You can also discuss how {goal} establishes long-term intrinsic motivation by allowing actions to align with personal values, interests, and independent decisions[cite: 79, 80]."
+            ),
+            # --- PRIMARY SUB-NODES ---
+            "Sense of Choice": (
+                f"You can explore how {behavior} lacks a feeling of true decision-making power[cite: 81, 82]. "
+                f"You can also emphasize how {goal} provides a genuine sense of choice, which reduces psychological resistance and boosts overall engagement."
+            ),
+            "Perceived Locus of Causality": (
+                f"You can explore whether {behavior} is perceived as being driven by internal (self-chosen) or external (controlled) factors[cite: 30, 75, 76]. "
+                f"You can also highlight how {goal} identifies the current motivational stage to guide the user toward a more self-determined drive for activity[cite: 77]."
+            ),
+            "Control of Exercise Plan": (
+                f"You can explore how {behavior} is hindered by rigid logistics[cite: 31, 54]. "
+                f"You can also discuss how {goal} allows the user to dictate workout logistics, such as time, place, and type of exercise, to remove practical barriers to execution[cite: 37, 38, 39, 55, 56]."
+            ),
+            # --- PSYCHOLOGICAL & IDENTITY ALIGNMENT ---
+            "Consistent with Personal Identity": (
+                f"You can explore how {behavior} feels like an external chore that doesn't fit the user[cite: 34, 66]. "
+                f"You can also highlight how {goal} makes exercise a natural reflection of 'who I am,' transforming movement into a default lifestyle habit[cite: 67, 68]."
+            ),
+            "Alignment with Personal Value": (
+                f"You can explore how {behavior} might conflict with core virtues[cite: 36, 69]. "
+                f"You can also discuss how {goal} transforms fitness into a pathway for realizing self-worth and demonstrating values like self-discipline and resilience[cite: 70, 71]."
+            ),
+            # --- EXTERNAL PRESSURE & REGULATION ---
+            "No External Pressure": (
+                f"You can explore how {behavior} is driven by coercion from peers or societal expectations[cite: 35, 57, 58]. "
+                f"You can also discuss how {goal} shifts the mindset from 'I have to' to 'I want to' by removing external pressure[cite: 59]."
+            ),
+            "Absence of Conditional Punishment": (
+                f"You can explore how {behavior} is motivated by fear, guilt, or shame[cite: 32, 60, 61]. "
+                f"You can also highlight how {goal} prevents negative emotional associations with physical activity by ensuring exercise is not a response to self-punishment[cite: 62]."
+            ),
+            "Free of External Awards": (
+                f"You can explore how {behavior} depends solely on praise or tangible rewards[cite: 33, 63, 64]. "
+                f"You can also discuss how {goal} cultivates joy and satisfaction in the activity itself rather than chasing external validation[cite: 65]."
+            ),
+            "Driven by Health Outcomes": (
+                f"You can explore how {behavior} might be neglecting long-term wellness[cite: 40, 72]. "
+                f"You can also emphasize how {goal} leverages a personal desire to improve physical energy and functionality as a powerful internal motivator[cite: 73, 74]."
+            ),
+            # --- LOGISTICAL SUB-NODES UNDER "CONTROL OF EXERCISE PLAN" ---
+            "Time": (
+                f"You can explore how rigid scheduling in {behavior} creates friction in your client's daily routine[cite: 37, 51, 54]. "
+                f"You can also discuss how achieving {goal} through flexible timing allows them to integrate activity whenever it best fits their energy and lifestyle[cite: 37, 51, 54]."
+            ),
+            "Place": (
+                f"You can explore how the current environment in {behavior} might feel inconvenient or uncomfortable[cite: 38, 52, 55]. "
+                f"You can also highlight how {goal} gives them the power to choose a location—whether at home, outdoors, or a gym—that feels most conducive to their success[cite: 38, 52, 55]."
+            ),
+            "Type of Exercise": (
+                f"You can explore how {behavior} might involve activities that the client finds boring or unsuitable[cite: 39, 53, 56]. "
+                f"You can also discuss how {goal} empowers them to select the specific forms of movement they actually enjoy, ensuring the workout feels like a choice rather than a chore[cite: 39, 53, 56]."
+            ),
+        }
 
         self.system_prompt = (
             f"You are a motivational interviewing counselor. Counseling goal: {goal}. "
@@ -217,12 +278,24 @@ class CAMI:
     def _generate_utterance(self, focus_topic: str) -> str:
         tree = _tree_for_prompt(self.topic_graph)
         recent = "\n".join(self.conversation[-10:])
-        user = (
-            f"Full topic tree (stay coherent with these themes; do not invent nodes outside this JSON):\n{tree}\n\n"
-            f"Current focus topic: {focus_topic}\n\n"
-            f"Dialogue so far:\n{recent}\n\n"
-            "Write the counselor's next line only, following motivational interviewing style."
+        focus_desc = self.topic2description.get(focus_topic, "")
+        parts: list[str] = [
+            "Full topic tree (stay coherent with these themes; do not invent nodes outside this JSON):\n",
+            tree,
+            "\n\n",
+            f"Current focus topic: {focus_topic}\n\n",
+        ]
+        if focus_desc:
+            parts.extend(["Focus topic description:\n", focus_desc, "\n\n"])
+        parts.extend(
+            [
+                "Dialogue so far:\n",
+                recent,
+                "\n\n",
+                "Write the counselor's next line only, following motivational interviewing style.",
+            ]
         )
+        user = "".join(parts)
         text = _chat(
             [
                 {"role": "system", "content": self.system_prompt},
