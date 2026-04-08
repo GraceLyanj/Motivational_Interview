@@ -2,8 +2,10 @@ from typing import List, Literal, TypedDict, Optional
 import uuid
 
 import json
+import logging
 import os
 import random
+import traceback
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,9 +36,9 @@ app = FastAPI(title="CAMI Chat Backend")
 
 app.add_middleware(
   CORSMiddleware,
-  # In development, allow all origins so the Vite dev server can call us
+  # allow_credentials must be False when allow_origins is "*", or browsers block some cross-origin requests
   allow_origins=["*"],
-  allow_credentials=True,
+  allow_credentials=False,
   allow_methods=["*"],
   allow_headers=["*"],
 )
@@ -402,15 +404,31 @@ def auto_session_stream() -> StreamingResponse:
   """Stream a CAMI auto session as server-sent events for live UI updates."""
 
   def event_stream():
-    for msg in cami_stream_generator(
-      model=os.environ.get("OPENAI_MODEL", "gpt-5.2"),
-      retriever_path="facebook/dpr-ctx_encoder-single-nq-base",
-      wikipedia_dir="./wikipedias",
-      profile_path="./annotations/profiles.jsonl",
-      profile_index=None,
-      max_turns=20,
-    ):
-      yield f"data: {json.dumps(msg)}\n\n"
+    try:
+      for msg in cami_stream_generator(
+        model=os.environ.get("OPENAI_MODEL", "gpt-5.2"),
+        retriever_path="facebook/dpr-ctx_encoder-single-nq-base",
+        wikipedia_dir="./wikipedias",
+        profile_path="./annotations/profiles.jsonl",
+        profile_index=None,
+        max_turns=20,
+      ):
+        yield f"data: {json.dumps(msg)}\n\n"
+      # EventSource reports connection close as an error unless the client knows the stream ended on purpose
+      yield f"data: {json.dumps({'kind': 'done', 'role': 'counselor', 'text': ''})}\n\n"
+    except Exception as e:
+      logging.error("auto_session_stream failed: %s", e)
+      logging.debug(traceback.format_exc())
+      err_payload = {"kind": "error", "role": "counselor", "text": f"{type(e).__name__}: {e}"}
+      yield f"data: {json.dumps(err_payload)}\n\n"
 
-  return StreamingResponse(event_stream(), media_type="text/event-stream")
+  return StreamingResponse(
+    event_stream(),
+    media_type="text/event-stream",
+    headers={
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  )
 
